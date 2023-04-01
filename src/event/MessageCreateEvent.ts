@@ -6,9 +6,10 @@ import IMessageCommandMap from "../interface/IMessageCommandMap";
 import { ClassLogger } from "../logging/Logger";
 import pingCommand from "./../command/message/PingCommand";
 import { applyAlias } from "../utils/Utils"
+import listenCommand from "../command/message/ListenCommand";
 
 /* ==== PROPERTIES ============================================================================== */
-const logger = new ClassLogger("MessageHandler", __dirname);
+const logger = new ClassLogger(null as any, __filename);
 
 /* ==== EVENT - messageCreate =================================================================== */
 export default async (_: TsLeottaTalkative, msg: Message) => {
@@ -16,7 +17,7 @@ export default async (_: TsLeottaTalkative, msg: Message) => {
 
     // Bot message: reject
     if(msg.author.bot) return;
-    
+
     // No prefix: reject
     if (!msg.content.startsWith(prefix)) return;
 
@@ -29,7 +30,7 @@ export default async (_: TsLeottaTalkative, msg: Message) => {
 
     // Retrieve command "name" and search the command fn in the map
     const cmdName: string = (args.shift() as string).toLowerCase();
-    logger.log(`${msg.guild?.name} - ${msg.author.username}: ${msg.content}`);
+    logger.debug(`${msg.guild?.name} - ${msg.author.username}: ${msg.content}`);
     const cmd: ICommand = messageCommandMap[cmdName];
 
     // Unknown command: reject
@@ -37,7 +38,7 @@ export default async (_: TsLeottaTalkative, msg: Message) => {
 
     // Call internal command with parameters given directly by users
     // Execution wrapped in try/catch to avoid halt
-    try{
+    try {
         await cmd.fn(msg, ...args);
     } catch(e) {
         logger.error(`Error during the execution of ${cmdName}: ${e.message}`);
@@ -48,6 +49,7 @@ export default async (_: TsLeottaTalkative, msg: Message) => {
 /* ==== COMMANDS MAP ============================================================================ */
 const messageCommandMap: IMessageCommandMap = {
     "pang, peng, ping, pong, pung": pingCommand,
+    "listen": listenCommand,
 }
 
 /* ==== MULTI-KEY HANDLING ====================================================================== */

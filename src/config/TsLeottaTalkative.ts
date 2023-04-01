@@ -5,17 +5,17 @@ import readyEvent from '../event/ReadyEvent';
 import messageCreateEvent from '../event/MessageCreateEvent';
 import voiceStateEvent from '../event/VoiceStateEvent';
 
-/* ==== CLASS ================================================================= */
+/* ==== CLASS =================================================================================== */
 /** Main class that rapresents the bot itself. On init, logs in the bot into Discord and starts to listen on all the events. */
 export default class TsLeottaTalkative extends Client {
     public logger: ClassLogger;
     public init = () => {
-        const isProd = process.env.ENVIROMENT == "P" ? true : false;
+        const isProd = process.env.ENV == "P" ? true : false;
 
         // Bot login
         this.logger = new ClassLogger(null as any, __filename);
-        this.logger.info(`==== Deploy started on enviroment ${isProd ? "PRODUCTION" : "TEST"} ====`);
-        this.login(isProd ? process.env.PROD_TOKEN : process.env.TEST_TOKEN);
+        this.logger.info(`======= Deploy started on enviroment ${isProd ? "PROD" : "TEST"} =======`);
+        this.login(isProd ? process.env.PROD_KEY : process.env.TEST_KEY);
         
         // On bot login event, execute only once  
         this.once("ready", readyEvent.bind(null, this));
@@ -23,9 +23,9 @@ export default class TsLeottaTalkative extends Client {
 
         // Event Listeners
         this.on("messageCreate", messageCreateEvent.bind(null, this));
-        this.logger.info("Listening on event messageCreate");
+        this.logger.info("Listening on event 'messageCreate'");
 
         this.on("voiceStateUpdate", voiceStateEvent.bind(null, this));
-        this.logger.info("Listening on event voiceStateUpdate");
+        this.logger.info("Listening on event 'voiceStateUpdate'");
     }
 }
