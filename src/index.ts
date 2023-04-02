@@ -2,6 +2,8 @@ import TsLeottaTalkative from './config/TsLeottaTalkative';
 
 import dotenv from "dotenv";    // Configure process.env globally
 import { GatewayIntentBits, Options } from 'discord.js';
+import fs from 'fs';
+import { Logger } from './logging/Logger';
 dotenv.config();
 
 /* ==== Core ============================================================================================================================== */
@@ -36,3 +38,12 @@ export const tsLeottaTalkative: TsLeottaTalkative = new TsLeottaTalkative({
     })
 });
 tsLeottaTalkative.init();
+
+// Output dir cleaning in case the bot crashed in the previous run
+const outputDir = "./out/";
+fs.readdir(outputDir, (err, files) => {
+    for(const file of files) {
+        const filePath: string = outputDir + file;
+        fs.unlink(filePath, () => tsLeottaTalkative.logger.debug(`${filePath} deleted`));
+    }
+});

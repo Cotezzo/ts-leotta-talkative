@@ -7,6 +7,8 @@ import { sleep } from "../../utils/Utils";
 import fs from "fs";
 import wav from "wav";
 import { ChildProcessWithoutNullStreams, spawn } from "child_process";
+import { spawnSync } from "child_process";
+import { SpawnSyncReturns } from "child_process";
 
 /* ==== PROPERTIES ============================================================================== */
 const logger: ClassLogger = new ClassLogger(null as any, __filename);
@@ -120,42 +122,36 @@ export const listenCommand: ICommand = {
 
             // Define the behaviour of the stream when it closes
             // The event is emitted when the user stops talking or he or the bot is disconnected
+            // The "lock" (listening flag) on the user will be lifted and a new stream can be read
             // If the duration of the audio that would be created is too short, trash it
             // Create a writable stream to save the WAV file (piping wavStream) to disk
-            // Once the file is succesfully created, transcribe the content via a child process
-            // The result of the python subprocess will be sent in the channel bound to the user
+            // Once the file is ready, transcribe the content spawning a python child process
+            // The result of the child process will be sent in the channel bound to the user
             // Since the data is returned as a buffer, a conversion to edible utf8 is needed
-            // The "lock" (listening flag) on the user will be lifted and a new stream will be read
             userInputStream.on("close", () => {
                 listening = false;
 
                 const duration: number = Date.now() - (startTimestamp as number);
-                logger.info(`Registration completed! Duration: ${duration}ms`);
-                if(duration < MIN_DURATION) return logger.warn(`Trashing registration: Duration was less than ${MIN_DURATION} ms`);
+                if(duration < MIN_DURATION) return logger.debug(`Trashing recording of ${MIN_DURATION} ms`);
     
                 const outWavPath: string = `./out/${userId}.${startTimestamp}.wav`;
                 const outputStream = fs.createWriteStream(outWavPath);
-    
-                outputStream.on("close", () => {
-                    // TODO: capire perché l'avvio dello script python non viene triggerato da qui
-                 });
-    
                 wavStream.pipe(outputStream);
-    
-                logger.debug(`Registration completed and saved to ${outWavPath}`);
-    
-                // TODO: use spawnSync
-                const pyProcess: ChildProcessWithoutNullStreams = spawn("python3", ["./transcribe.py", outWavPath]);
-                pyProcess.stdout.on("data", data => {
-                    let result: string = data.toString("utf8");
-                    result = result.substring(0, result.length-1);
 
-                    if(!result || result.length === 0) return textChannel.send(`Non ho capito un cazzo di quello che hai detto, **${msg.member?.nickname}**...`);
-                    textChannel.send(`**${msg.member?.nickname}**: ${result}`);
+                outputStream.on("ready", () => {
+                    logger.debug(`Recording of ${duration}ms completed and saved to ${outWavPath}`);
 
-                    fs.unlink(outWavPath, () => logger.debug("Registration processed and unlinked"));
-                    
-                })
+                    // TODO: use spawnSync
+                    const pyProcess: ChildProcessWithoutNullStreams = spawn("python3", ["./transcribe.py", outWavPath]);
+                    pyProcess.stdout.on("data", data => {
+                        let result: string = data.toString("utf8");
+
+                        if(!result || result.length === 1) return textChannel.send(`Non ho capito un cazzo di quello che hai detto, **${msg.member?.nickname}**...`);
+                        textChannel.send(`**${msg.member?.nickname}**: ${result}`);
+
+                        fs.unlink(outWavPath, () => logger.debug("Recording processed and unlinked"));
+                    });
+                });
             })
     
             // Don't check again if the input stream is still open ("lock")
