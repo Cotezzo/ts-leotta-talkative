@@ -4,9 +4,10 @@ import TsLeottaTalkative from "../config/TsLeottaTalkative";
 import ICommand from "../interface/ICommand";
 import IMessageCommandMap from "../interface/IMessageCommandMap";
 import { ClassLogger } from "../logging/Logger";
-import pingCommand from "./../command/message/PingCommand";
 import { applyAlias } from "../utils/Utils"
-import listenCommand from "../command/message/ListenCommand";
+import { pingCommand } from "./../command/message/PingCommand";
+import { listenCommand } from "../command/message/ListenCommand";
+import { unlistenCommand } from "./../command/message/UnlistenCommand";
 
 /* ==== PROPERTIES ============================================================================== */
 const logger = new ClassLogger(null as any, __filename);
@@ -50,6 +51,7 @@ export default async (_: TsLeottaTalkative, msg: Message) => {
 const messageCommandMap: IMessageCommandMap = {
     "pang, peng, ping, pong, pung": pingCommand,
     "listen": listenCommand,
+    "stop, cagati": unlistenCommand
 }
 
 /* ==== MULTI-KEY HANDLING ====================================================================== */

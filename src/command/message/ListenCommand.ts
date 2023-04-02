@@ -1,4 +1,4 @@
-import { InternalDiscordGatewayAdapterCreator, Message } from "discord.js";
+import { InternalDiscordGatewayAdapterCreator, Message, TextChannel, VoiceBasedChannel, VoiceChannel } from "discord.js";
 import { AudioReceiveStream, EndBehaviorType, VoiceConnection, joinVoiceChannel } from "@discordjs/voice";
 import { OpusEncoder } from "@discordjs/opus";
 import ICommand from "../../interface/ICommand";
@@ -12,84 +12,103 @@ import { ChildProcessWithoutNullStreams, spawn } from "child_process";
 const logger: ClassLogger = new ClassLogger(null as any, __filename);
 
 // A registration must last at least {MIN_DURATION} milliseconds in order to be saved and read
-const MIN_DURATION: number = 1000;
+const MIN_DURATION: number = 1500;
+const SILENCE_MAX_DURATION: number = 250;
 
 // Store servers data so that multiple can be handled at the same time
-const ServerConnectionsMap: Map<string, ServerConnections> = new Map();
+export const serverConnectionsMap: Map<string, ServerConnections> = new Map();
 
 // OpusDecoder to read input voice streams and converting them to .wav
 const opusEncoder: OpusEncoder = new OpusEncoder(48000, 2);
 
 /* ==== INFO STORAGE CLASS ====================================================================== */
-class ServerConnections {
+export class ServerConnections {
     constructor () {
         this.userConnectionsMap = new Map();
-        this.userListened = new Set();
+        this.userBindings = new Map();
     }
 
-    botVoiceConnection: VoiceConnection;
+    botVoiceConnection: VoiceConnection | undefined;
     userConnectionsMap: Map<string, AudioReceiveStream>;
-    userListened: Set<string>;
+    userBindings: Map<string, TextChannel>;
+
+    cleanUser(userId: string, callback?: (...args: any) => any): void {
+        if(callback) callback();
+        this.userBindings.delete(userId);
+        if(this.userBindings.size === 0) {
+            if(this.botVoiceConnection) this.botVoiceConnection.destroy();
+            this.botVoiceConnection = undefined;
+        }
+    }
 }
 
 /* ==== UTILS =================================================================================== */
 const isListeningActive = (userId: string, guildId: string) => {
 
     // Check if the serverConnections object still exists
-    const serverConnections: ServerConnections | undefined = ServerConnectionsMap.get(guildId);
+    const serverConnections: ServerConnections | undefined = serverConnectionsMap.get(guildId);
     if(!serverConnections) return false;
 
     // Check if the user still wants to be listened
-    if(!serverConnections.userListened.has(userId)) return false;
+    if(!serverConnections.userBindings.has(userId)) return false;
 
     return true;
 }
 
 /* ==== COMMAND ================================================================================= */
-const listenCommand: ICommand = {
+export const listenCommand: ICommand = {
     name: "listen",
     fn: async (msg: Message) => {
 
-        // User not in a voice channel: reject
-        if(!msg.member?.voice.channel) msg.reply("Come cazzo dovrei sentirti??");
+        // Command only valid in normal text chanels
+        if(!(msg.channel instanceof TextChannel)) return;
+
+        // Check if user is actuallt in a voice channel
+        const userVoiceChannel: VoiceBasedChannel = msg.member?.voice.channel as VoiceBasedChannel;
+        if(!userVoiceChannel) return msg.reply("Come cazzo dovrei sentirti??");
 
         const userId: string = msg.member?.id as string;
-        const channelId: string = msg.channelId;
+        const channelId: string = msg.member?.voice.channelId as string;
         const guildId: string = msg.guildId as string;
 
         // Check if a ServerConnections object has already been created for this server
-        const serverConnections: ServerConnections = ServerConnectionsMap.get(guildId) ?? new ServerConnections();
+        const serverConnections: ServerConnections = serverConnectionsMap.get(guildId) ?? new ServerConnections();
+        serverConnectionsMap.set(guildId, serverConnections);
 
         // Check if a voice connection has already been created for this server
         const botVoiceConnection: VoiceConnection = serverConnections.botVoiceConnection ?? joinVoiceChannel({ selfDeaf: false, channelId, guildId, adapterCreator: msg.guild?.voiceAdapterCreator as InternalDiscordGatewayAdapterCreator });
+        serverConnections.botVoiceConnection = botVoiceConnection;
 
-        // Check if a input stream has already been opened for this user
-        if(serverConnections.userConnectionsMap.get(userId)) return;
-
-        // Save that this user wants to be listened
-        serverConnections.userListened.add(userId);
+        // Bind the user to the text channel he wants the transcriptions in
+        // If the user was already bound, just save the new channel without creating another process
+        const alreadyBound: boolean = serverConnections.userBindings.has(userId);
+        serverConnections.userBindings.set(userId, msg.channel);
+        if(alreadyBound) return;
 
         // Start listening to the user voice until the check fails (isListeningActive() === false)
         // Init loop properties
         let startTimestamp: number | null;
         let listening: boolean;
+        let textChannel: TextChannel;
         do {
             // Reset loop properties
             startTimestamp = null;
             listening = true;
     
+            // If the user binding is removed during the transcription, the message won't be sent
+            textChannel = serverConnections.userBindings.get(userId) as TextChannel;
+            if(!textChannel) return serverConnections.cleanUser(userId);
+            if(!userVoiceChannel.members.has(userId)) return serverConnections.cleanUser(userId, () => textChannel.send("Scemo ti sto parlando, dove cazzo vai?"));
+
             // Retrieve user voice as a stream of opus packets
-            const userInputStream: AudioReceiveStream = botVoiceConnection.receiver.subscribe(userId, { end: { behavior: EndBehaviorType.AfterSilence, duration: 200 } });
-            
+            const userInputStream: AudioReceiveStream = botVoiceConnection.receiver.subscribe(userId, { end: { behavior: EndBehaviorType.AfterSilence, duration: SILENCE_MAX_DURATION } });
+            logger.debug("UserInputStream created! Listening...");
+
             // Tell the user that the bot is "transcribing"
-            msg.channel.sendTyping();
+            textChannel.sendTyping();
 
             // Create a WAV writable stream to correctly parse the decoded data to write in the file
-            const wavStream = new wav.Writer({
-                sampleRate: 48000,
-                channels: 2,
-                bitDepth: 16
-            });
+            const wavStream = new wav.Writer({ sampleRate: 48000, channels: 2, bitDepth: 16 });
       
             // Define the behaviour of the stream when a packet (buffer) is received
             // Each packet will be decoded from the OpusEncoder and sent to the wavStream
@@ -100,18 +119,19 @@ const listenCommand: ICommand = {
             });
 
             // Define the behaviour of the stream when it closes
+            // The event is emitted when the user stops talking or he or the bot is disconnected
             // If the duration of the audio that would be created is too short, trash it
-            // Create a writable stream to write the WAV file to disk and pipe the wavStream
+            // Create a writable stream to save the WAV file (piping wavStream) to disk
             // Once the file is succesfully created, transcribe the content via a child process
-            // The result of the python script will be sent in the text channel used for the command
-            userInputStream.on("end", () => {
-                // To unlock the loop, I free the thread so it can create and listen to the next stream
+            // The result of the python subprocess will be sent in the channel bound to the user
+            // Since the data is returned as a buffer, a conversion to edible utf8 is needed
+            // The "lock" (listening flag) on the user will be lifted and a new stream will be read
+            userInputStream.on("close", () => {
                 listening = false;
-    
-                // Calculate the audio duration and decide wether to keep it or use it
+
                 const duration: number = Date.now() - (startTimestamp as number);
                 logger.info(`Registration completed! Duration: ${duration}ms`);
-                if(duration < MIN_DURATION) return logger.warn(`Trashing registration: Duration was less than ${MIN_DURATION}`);
+                if(duration < MIN_DURATION) return logger.warn(`Trashing registration: Duration was less than ${MIN_DURATION} ms`);
     
                 const outWavPath: string = `./out/${userId}.${startTimestamp}.wav`;
                 const outputStream = fs.createWriteStream(outWavPath);
@@ -122,20 +142,26 @@ const listenCommand: ICommand = {
     
                 wavStream.pipe(outputStream);
     
-                logger.info(`Registration completed and saved to ${outWavPath}`);
+                logger.debug(`Registration completed and saved to ${outWavPath}`);
     
                 // TODO: use spawnSync
                 const pyProcess: ChildProcessWithoutNullStreams = spawn("python3", ["./transcribe.py", outWavPath]);
                 pyProcess.stdout.on("data", data => {
-                    msg.channel.send(data);
+                    let result: string = data.toString("utf8");
+                    result = result.substring(0, result.length-1);
+
+                    if(!result || result.length === 0) return textChannel.send(`Non ho capito un cazzo di quello che hai detto, **${msg.member?.nickname}**...`);
+                    textChannel.send(`**${msg.member?.nickname}**: ${result}`);
+
+                    fs.unlink(outWavPath, () => logger.debug("Registration processed and unlinked"));
+                    
                 })
             })
     
             // Don't check again if the input stream is still open ("lock")
-            while(listening) await sleep(100);
+            while(listening) await sleep(1000);
 
         // Once the audio has been transcribed, check if the user wants more - if so, repeat
         } while( isListeningActive(userId, guildId) );
     }
 }
-export default listenCommand;
