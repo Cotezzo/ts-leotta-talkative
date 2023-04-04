@@ -1,10 +1,10 @@
-import TsLeottaTalkative from './config/TsLeottaTalkative';
-
 import dotenv from "dotenv";    // Configure process.env globally
+dotenv.config();
+
 import { GatewayIntentBits, Options } from 'discord.js';
 import fs from 'fs';
-import { Logger } from './logging/Logger';
-dotenv.config();
+import TsLeottaTalkative from './config/TsLeottaTalkative';
+import { retrieveChatInfo } from "./fragment/ChatGpt";
 
 /* ==== Core ============================================================================================================================== */
 export const tsLeottaTalkative: TsLeottaTalkative = new TsLeottaTalkative({
@@ -47,3 +47,5 @@ fs.readdir(outputDir, (err, files) => {
         fs.unlink(filePath, () => tsLeottaTalkative.logger.debug(`${filePath} deleted`));
     }
 });
+
+retrieveChatInfo();

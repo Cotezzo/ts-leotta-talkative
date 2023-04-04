@@ -1,11 +1,25 @@
 /* ==== CONST ======================================================================= */
 const RESET_COLOR = "\x1b[0m";
 
+const LOG_LEVEL_DEBUG = 0;
+const LOG_LEVEL_INFO = 1;
+const LOG_LEVEL_WARN = 2;
+const LOG_LEVEL_ERROR = 3;
+
+const logLevel = getLogLevel();
+
+function getLogLevel() {
+    if(process.env.LOG_LEVEL == "DEBUG") return LOG_LEVEL_DEBUG;
+    if(process.env.LOG_LEVEL == "WARN") return LOG_LEVEL_WARN;
+    if(process.env.LOG_LEVEL == "ERROR") return LOG_LEVEL_ERROR;
+    return LOG_LEVEL_INFO;
+}
+
 /* ==== EXPORTS ===================================================================== */
 export class Logger {
-    public static debug = (text: string): void => Logger.print("DEBUG", "\x1b[35m", text);
-    public static info = (text: string): void => Logger.print("INFO", "\x1b[36m", text);
-    public static warn = (text: string): void => Logger.print("WARN", "\x1b[33m", text);
+    public static debug = (text: string): void => { if(logLevel <= LOG_LEVEL_DEBUG) Logger.print("DEBUG", "\x1b[35m", text) };
+    public static info = (text: string): void => { if(logLevel <= LOG_LEVEL_INFO) Logger.print("INFO", "\x1b[36m", text) };
+    public static warn = (text: string): void => { if(logLevel <= LOG_LEVEL_WARN) Logger.print("WARN", "\x1b[33m", text) };
     public static error = (text: string): void => Logger.print("ERROR", "\x1b[31m", text);
     
     private static print = (level: string, color: string, text: string): void =>

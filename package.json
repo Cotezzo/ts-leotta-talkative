@@ -5,11 +5,19 @@
   "main": "src/index.ts",
   "scripts": {
     "start": "node ./src/index.js",
-    "test": "ts-node-dev --respawn --transpile-only --poll ./src/index.ts"
+    "test": "ts-node-dev --respawn --transpile-only --poll ./src/index.ts",
+    "build": "ts-node-dev ./src/index.ts"
   },
-  "keywords": ["typescript", "node.js", "discord.js", "whisper"],
+  "keywords": [
+    "TypeScript",
+    "Node.JS",
+    "Discord.JS",
+    "OpenAI-Whisper",
+    "Google TTS",
+    "ChatGPT"
+  ],
   "author": "Cotezzo",
-  "license": "ISC",
+  "license": "MIT",
   "devDependencies": {
     "@types/node": "^18.11.9",
     "@types/wav": "^1.0.1",

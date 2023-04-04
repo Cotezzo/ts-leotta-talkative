@@ -1,5 +1,5 @@
 import { InternalDiscordGatewayAdapterCreator, Message, TextChannel, VoiceBasedChannel, VoiceChannel } from "discord.js";
-import { AudioReceiveStream, EndBehaviorType, VoiceConnection, joinVoiceChannel } from "@discordjs/voice";
+import { AudioPlayer, AudioReceiveStream, EndBehaviorType, StreamType, VoiceConnection, createAudioPlayer, createAudioResource, joinVoiceChannel } from "@discordjs/voice";
 import { OpusEncoder } from "@discordjs/opus";
 import ICommand from "../../interface/ICommand";
 import { ClassLogger } from "../../logging/Logger";
@@ -7,8 +7,9 @@ import { sleep } from "../../utils/Utils";
 import fs from "fs";
 import wav from "wav";
 import { ChildProcessWithoutNullStreams, spawn } from "child_process";
-import { spawnSync } from "child_process";
-import { SpawnSyncReturns } from "child_process";
+import synthetize from "../../fragment/GoogleSynthetizer";
+import { Readable } from "stream";
+import { sendMessageAndPoll } from "../../fragment/ChatGpt";
 
 /* ==== PROPERTIES ============================================================================== */
 const logger: ClassLogger = new ClassLogger(null as any, __filename);
@@ -26,12 +27,15 @@ const opusEncoder: OpusEncoder = new OpusEncoder(48000, 2);
 /* ==== INFO STORAGE CLASS ====================================================================== */
 export class ServerConnections {
     constructor () {
-        this.userConnectionsMap = new Map();
         this.userBindings = new Map();
+        this.botAudioPlayer = createAudioPlayer();
+
+        this.botAudioPlayer.on("stateChange", (_, newState) => logger.debug("AudioPlayer state changed: " + newState.status));
+        this.botAudioPlayer.on("error", err => logger.error("AudioPlayer error: " + err.message));
     }
 
     botVoiceConnection: VoiceConnection | undefined;
-    userConnectionsMap: Map<string, AudioReceiveStream>;
+    botAudioPlayer: AudioPlayer;
     userBindings: Map<string, TextChannel>;
 
     cleanUser(userId: string, callback?: (...args: any) => any): void {
@@ -122,34 +126,50 @@ export const listenCommand: ICommand = {
 
             // Define the behaviour of the stream when it closes
             // The event is emitted when the user stops talking or he or the bot is disconnected
-            // The "lock" (listening flag) on the user will be lifted and a new stream can be read
-            // If the duration of the audio that would be created is too short, trash it
-            // Create a writable stream to save the WAV file (piping wavStream) to disk
-            // Once the file is ready, transcribe the content spawning a python child process
-            // The result of the child process will be sent in the channel bound to the user
-            // Since the data is returned as a buffer, a conversion to edible utf8 is needed
             userInputStream.on("close", () => {
+
+                // The "lock" (listening flag) on the user will be lifted and a new stream can be read
                 listening = false;
 
+                // If the duration of the audio that would be created is too short, trash it
                 const duration: number = Date.now() - (startTimestamp as number);
                 if(duration < MIN_DURATION) return logger.debug(`Trashing recording of ${MIN_DURATION} ms`);
-    
+
+                // Create a writable stream to save the WAV file (piping wavStream) to disk
                 const outWavPath: string = `./out/${userId}.${startTimestamp}.wav`;
                 const outputStream = fs.createWriteStream(outWavPath);
                 wavStream.pipe(outputStream);
 
+                // Define the behaviour of the stream when the file is ready
                 outputStream.on("ready", () => {
-                    logger.debug(`Recording of ${duration}ms completed and saved to ${outWavPath}`);
+                    logger.info(`Recording of ${duration}ms completed and saved to ${outWavPath}`);
 
+                    // Transcribe the content spawning a python child process
                     // TODO: use spawnSync
                     const pyProcess: ChildProcessWithoutNullStreams = spawn("python3", ["./transcribe.py", outWavPath]);
-                    pyProcess.stdout.on("data", data => {
+                    pyProcess.stdout.on("data", async data => {
+
+                        // Since the data is returned as a buffer, a conversion to edible utf8 is needed
                         let result: string = data.toString("utf8");
 
+                        // The result of the child process will be sent in the channel bound to the user
                         if(!result || result.length === 1) return textChannel.send(`Non ho capito un cazzo di quello che hai detto, **${msg.member?.nickname}**...`);
-                        textChannel.send(`**${msg.member?.nickname}**: ${result}`);
+                        const messageSent: Message = await textChannel.send(`**${msg.member?.nickname}**: ${result}`);
 
-                        fs.unlink(outWavPath, () => logger.debug("Recording processed and unlinked"));
+                        // Delete the audio file once it has been transcribed
+                        fs.unlink(outWavPath, () => logger.info("Recording processed and unlinked"));
+
+                        // TEMPORARY - Read the transcription out loud in the voice channel
+                        // TODO: synthetize ChatGPT response
+                        const chatResponse: string[] = await sendMessageAndPoll(result);
+                        const stream: Readable = await synthetize(chatResponse[0], "en");
+                        // const stream: Readable = await synthetize(result, "en");
+
+                        messageSent.reply(chatResponse[0]);
+                        const resource = createAudioResource(stream, { inlineVolume: true, inputType: StreamType.Arbitrary });
+
+                        serverConnections.botAudioPlayer.play(resource);
+                        serverConnections.botVoiceConnection?.subscribe(serverConnections.botAudioPlayer);
                     });
                 });
             })
