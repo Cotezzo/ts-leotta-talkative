@@ -28,5 +28,11 @@ A .env file is required for the bot to run, it must contain:
 - ENV: 'P' or 'T' (PRODUCTION or TEST)
 - PROD_KEY: your final bot secrey key
 - TEST_KEY: your test bot secret key (if you need one)
+
 - PREFIX: string the bot uses to find your commands in the chat (command example: $listen)
 - VERSION: bot version
+- LOG_LEVEL: DEBUG | INFO | WARN | ERROR (logging isn't too detailed for now, just leave it at DEBUG)
+
+- POE_LOGIN_COOKIE: Your login cookie generated once you logged in poe.com (from F12)
+- POE_COMPLETE_CHANNEL: Url param "generated" and sent to the backend in various requests (from F12)
+- POE_CHAT_ID: Chat identifier generated and sent to the backend when posting a message (from F12)
