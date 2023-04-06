@@ -6,6 +6,7 @@ import IChatEvent from "../interface/IChatEvent";
 import IChatMessage from "../interface/IChatMessage";
 import EventEmitter from "events";
 import { sleep } from "../utils/Utils";
+import { rejects } from "assert";
 
 /* ==== PROPERTIES ============================================================================== */
 const logger: ClassLogger = new ClassLogger(null as any, __filename);
@@ -118,8 +119,6 @@ async function sendMessage(text: string): Promise<void> {
         "query": "mutation chatHelpers_sendMessageMutation_Mutation(\n  $chatId: BigInt!\n  $bot: String!\n  $query: String!\n  $source: MessageSource\n  $withChatBreak: Boolean!\n) {\n  messageEdgeCreate(chatId: $chatId, bot: $bot, query: $query, source: $source, withChatBreak: $withChatBreak) {\n    chatBreak {\n      cursor\n      node {\n        id\n        messageId\n        text\n        author\n        suggestedReplies\n        creationTime\n        state\n      }\n      id\n    }\n    message {\n      cursor\n      node {\n        id\n        messageId\n        text\n        author\n        suggestedReplies\n        creationTime\n        state\n        chat {\n          shouldShowDisclaimer\n          id\n        }\n      }\n      id\n    }\n  }\n}\n"
     };
 
-    logger.debug(`Send POST request with headers ${headers} and body ${body}`);
-
     // Make the actual request
     return await axios.post("https://poe.com/api/gql_POST", body, headers);
 }
@@ -128,17 +127,18 @@ async function sendMessage(text: string): Promise<void> {
     Once the TIMEOUT is reached, the polling will close and the Promise will be rejected */
 export async function sendMessageAndPoll(text: string): Promise<string[]> {
 
-    // Send the actual message
-    await sendMessage(text);
-
     // Return Promise that waits for the reply
     return new Promise(async (resolve, reject) => {
+        // Send the actual message
+        await sendMessage(text).catch(e => reject(logger.warn(e)));
 
         // Listen for chat message event
-        chatMessageEmitter.on("message", (rawMessage: string, embedMessage: string) => resolve([rawMessage, embedMessage]));
+        chatMessageEmitter.once("message", (rawMessage: string, embedMessage: string) => resolve([rawMessage, embedMessage]));
 
         // Reject after the TIMEOUT is reached
         await sleep(LONG_POLLING_TIMEOUT);
-        reject(`Response timeout after ${LONG_POLLING_TIMEOUT}ms`);
+        // In realtà tutti i thread rimangono appesi qui
+        //logger.warn(`Response timeout after ${LONG_POLLING_TIMEOUT}ms`)
+        reject();
     });
 }
