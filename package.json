@@ -4,9 +4,9 @@
   "description": "",
   "main": "src/index.ts",
   "scripts": {
-    "start": "node ./src/index.js",
+    "start": "node ./dist/index.js",
     "test": "ts-node-dev --respawn --transpile-only --poll ./src/index.ts",
-    "build": "ts-node-dev ./src/index.ts"
+    "build": "tsc --removeComments ./src/index.ts --outDir ./dist"
   },
   "keywords": [
     "TypeScript",
@@ -21,6 +21,7 @@
   "devDependencies": {
     "@types/node": "^18.11.9",
     "@types/wav": "^1.0.1",
+    "ts-node": "^10.9.1",
     "ts-node-dev": "^2.0.0"
   },
   "dependencies": {

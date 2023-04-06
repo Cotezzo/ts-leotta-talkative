@@ -1,4 +1,4 @@
-import dotenv from "dotenv";    // Configure process.env globally
+import * as dotenv from "dotenv";    // Configure process.env globally
 dotenv.config();
 
 import { GatewayIntentBits, Options } from 'discord.js';

@@ -44,7 +44,8 @@ export function retrieveChatInfo(): void {
         seq = data.tchannelData.minSeq,
         channel = data.tchannelData.boxName;
         channelHash = data.tchannelData.channelHash
-        //logger.debug(`Retrieved chat info: formKey=${formKey}, seq=${seq}, channel=${channel}, channelHash=${channelHash}`);
+        
+        logger.debug(`Retrieved chat info: formKey=${formKey}, seq=${seq}, channel=${channel}, channelHash=${channelHash}`);
     })
     .then((): void => initChatConnection());
 }

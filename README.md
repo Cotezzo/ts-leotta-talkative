@@ -17,9 +17,9 @@ To run the bot in "test" mode for developing purposes
 npm test
 ```
 
-To transpile the ts code to js and run it
+To transpile the ts code to js and run it (it won't because of some imports that probably need to be fixed, just use npm test)
 ```
-npm build
+npm run build
 npm start
 ```
 

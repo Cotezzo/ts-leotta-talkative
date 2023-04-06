@@ -10,6 +10,7 @@ import { ChildProcessWithoutNullStreams, spawn } from "child_process";
 import synthetize from "../../fragment/GoogleSynthetizer";
 import { Readable } from "stream";
 import { sendMessageAndPoll } from "../../fragment/ChatGpt";
+import { unlistenCommand } from "./UnlistenCommand";
 
 /* ==== PROPERTIES ============================================================================== */
 const logger: ClassLogger = new ClassLogger(null as any, __filename);
@@ -156,11 +157,12 @@ export const listenCommand: ICommand = {
                         if(!result || result.length === 1) return textChannel.send(`Non ho capito un cazzo di quello che hai detto, **${msg.member?.nickname}**...`);
                         const messageSent: Message = await textChannel.send(`**${msg.member?.nickname}**: ${result}`);
 
+                        if(result.toLocaleLowerCase().includes("shut up")) return unlistenCommand.fn(msg);
+
                         // Delete the audio file once it has been transcribed
                         fs.unlink(outWavPath, () => logger.info("Recording processed and unlinked"));
 
                         // TEMPORARY - Read the transcription out loud in the voice channel
-                        // TODO: synthetize ChatGPT response
                         const chatResponse: string[] = await sendMessageAndPoll(result);
                         const stream: Readable = await synthetize(chatResponse[0], "en");
                         // const stream: Readable = await synthetize(result, "en");
